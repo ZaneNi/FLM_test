@@ -26,7 +26,7 @@ class BaseTestTask(ABC):
         return f"{task_name}_results_v{self.version}_{self.timestamp}.csv"
 
     def _get_flm_version(self) -> str:
-        print("Checking flm version...")
+        print("\nChecking flm version...")
         try:
             response = urllib.request.urlopen(f"{self.base_url}/version", timeout=5)
             version_data = json.loads(response.read().decode('utf-8'))
@@ -38,7 +38,7 @@ class BaseTestTask(ABC):
         return flm_version
     
     def _fetch_all_models(self) -> list:
-        print("Fetching available models...")
+        print("\nFetching available models...")
         try:
             response = urllib.request.urlopen(f"{self.base_url}/models", timeout=5)
             models_json = json.loads(response.read().decode('utf-8'))
@@ -72,66 +72,137 @@ class LLMTask(BaseTestTask):
     def run(self, max_completion_tokens=-1):
         print("\n=== Starting LLM Tests ===")
         
-        non_stream_prompts = ["Teach me Maxwell's equations.", "What is pi * pi?"]
-        stream_prompts = ["What is the largest ocean on Earth?", "Write a quick haiku about coding."]
+        prompt = "Teach me Maxwell's equations."
+        followup_prompt = "Summarize the your answer."
 
-        # server_process = self.start_flm_server(audio="0", embed="0")
+        stream_prompt = "Tell me a joke and explain why it's funny." 
+        stream_followup_prompt = "Summarize the joke and its explanation."
 
         with open(self.csv_filename, mode='w', newline='', encoding='utf-8') as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(["Model", "Mode", "Input", "Reasoning Content", "Output Content"])
 
             for model_id in self.models:
+            # for model_id in self.models[2:4]:  # Limit to first 2 models for testing purposes
                 print(f"\n--- Testing LLM model: {model_id} ---")
-                time.sleep(1) 
-                print(f"Testing non-stream mode...\n")
-                
-                for prompt in non_stream_prompts:
+                print(f"\nTesting non-stream mode...\n")
+                messages = [
+                    {"role": "user", "content": prompt}
+                ]
+                # first round
+                try:
                     print(f"Prompt: {prompt}")
-                    try:
-                        response = self.client.chat.completions.create(
-                            model=model_id,
-                            messages=[{"role": "user", "content": prompt}],
-                            stream=False,
-                            max_completion_tokens=max_completion_tokens
-                        )
-                        reasoning_content = getattr(response.choices[0].message, "reasoning_content", "N/A") or "N/A"
-                        output_content = response.choices[0].message.content or ""
-                        print(f"Reasoning content: {reasoning_content}")
-                        print(f"Content: {output_content}")
-                        writer.writerow([model_id, "Non-Stream", prompt, reasoning_content, output_content])
-                        time.sleep(1)
-                    except Exception as e:
-                        writer.writerow([model_id, "Non-Stream", prompt, f"ERROR: {e}", "N/A"])
+                    response = self.client.chat.completions.create(
+                        model=model_id,
+                        messages=messages,
+                        stream=False,
+                        max_completion_tokens=max_completion_tokens
+                    )
+                    reasoning_content = getattr(response.choices[0].message, "reasoning_content", "N/A") or "N/A"
+                    output_content = response.choices[0].message.content or ""
+                    writer.writerow([model_id, "Non-Stream", prompt, reasoning_content, output_content])
+                    print("Done.")
+                    time.sleep(1)
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": output_content
+                    })
+                    messages.append({
+                        "role": "user",
+                        "content": followup_prompt
+                    })                    
+                except Exception as e:
+                    print(f"Error occurred in first round, model: {model_id}: {e}")
+                    writer.writerow([model_id, "Non-Stream", prompt, f"ERROR: {e}", "N/A"])
+                
+                # second round with previous messages
+                try:
+                    print(f"Follow-up Prompt: {followup_prompt}")
+                    response = self.client.chat.completions.create(
+                        model=model_id,
+                        messages=messages,
+                        stream=False,
+                        max_completion_tokens=max_completion_tokens
+                    )
+
+                    reasoning_content = getattr(
+                        response.choices[0].message, "reasoning_content", "N/A"
+                    ) or "N/A"
+                    output_content = response.choices[0].message.content or ""
+                    writer.writerow([model_id, "Non-Stream", followup_prompt, reasoning_content, output_content])
+                    print("Done.")
+                    time.sleep(1)
+                except Exception as e:
+                    print(f"Error occurred in second round, model: {model_id}: {e}")
+                    writer.writerow([model_id, "Non-Stream", prompt, f"ERROR: {e}", "N/A"])
 
                 # Stream Mode
-                for prompt in stream_prompts:
-                    try:
-                        response = self.client.chat.completions.create(
-                            model=model_id,
-                            messages=[{"role": "user", "content": prompt}],
-                            stream=True,
-                            max_completion_tokens=max_completion_tokens
-                        )
-                        output_content, reasoning_content = "", ""
+                print(f"\nTesting stream mode...\n")
+                messages = [
+                    {"role": "user", "content": stream_prompt}
+                ]
+                # first round
+                try:
+                    print(f"Prompt: {stream_prompt}")
+                    response = self.client.chat.completions.create(
+                        model=model_id,
+                        messages=messages,
+                        stream=True,
+                        max_completion_tokens=max_completion_tokens
+                    )
+                    output_content, reasoning_content = "", ""
+                    
+                    for chunk in response:
+                        if not chunk.choices: continue
+                        delta = chunk.choices[0].delta
                         
-                        for chunk in response:
-                            if not chunk.choices: continue
-                            delta = chunk.choices[0].delta
-                            
-                            if hasattr(delta, "reasoning_content") and delta.reasoning_content:
-                                reasoning_content += delta.reasoning_content
-                            if delta.content:
-                                output_content += delta.content
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            reasoning_content += delta.reasoning_content
+                        if delta.content:
+                            output_content += delta.content
+                    writer.writerow([model_id, "Stream", stream_prompt, reasoning_content or "N/A", output_content])
+                    print("Done.")
+                    time.sleep(1)
 
-                        writer.writerow([model_id, "Stream", prompt, reasoning_content or "N/A", output_content])
-                        time.sleep(1)
-                    except Exception as e:
-                        writer.writerow([model_id, "Stream", prompt, f"ERROR: {e}", "N/A"])
-        print("\nShutting down flm server...")
-        # server_process.terminate()
-        # server_process.wait()
-        print(f"LLM tests complete. Saved to {self.csv_filename}")
+                    messages.append({
+                        "role": "assistant",
+                        "content": output_content
+                    })
+                    messages.append({
+                        "role": "user",
+                        "content": stream_followup_prompt
+                    })                    
+                except Exception as e:
+                    print(f"Error occurred in first round, model: {model_id}: {e}")
+                    writer.writerow([model_id, "Stream", stream_prompt, f"ERROR: {e}", "N/A"])
+                # second round with previous messages
+                try:
+                    print(f"Follow-up Prompt: {stream_followup_prompt}")
+                    response = self.client.chat.completions.create(
+                        model=model_id,
+                        messages=messages,
+                        stream=True,
+                        max_completion_tokens=max_completion_tokens
+                    )
+                    output_content, reasoning_content = "", ""
+                    
+                    for chunk in response:
+                        if not chunk.choices: continue
+                        delta = chunk.choices[0].delta
+                        
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            reasoning_content += delta.reasoning_content
+                        if delta.content:
+                            output_content += delta.content
+                    writer.writerow([model_id, "Stream", stream_followup_prompt, reasoning_content or "N/A", output_content])
+                    print("Done.")
+                    time.sleep(1)
+                except Exception as e:
+                    print(f"Error occurred in second round, model: {model_id}: {e}")
+                    writer.writerow([model_id, "Stream", stream_followup_prompt, f"ERROR: {e}", "N/A"])
+                print(f"Finished testing model: {model_id}")
+        print(f"\nLLM tests complete. Saved to {self.csv_filename}")
 
 
 class EmbeddingTask(BaseTestTask):

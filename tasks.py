@@ -2,37 +2,53 @@ import csv
 import time
 import subprocess
 import json
+import urllib.request
+import urllib.error
 from abc import ABC, abstractmethod
 from datetime import datetime
+
+from openai import OpenAI
 
 class BaseTestTask(ABC):
     """
     Abstract base class for all testing tasks.
     Enforces a standard interface for running tests and saving results.
     """
-    def __init__(self, client):
-        self.client = client
+    def __init__(self, base_url, run_local=False):
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.base_url = base_url
+        self.run_local = run_local
+        self.client = OpenAI(base_url=base_url, api_key="flm")
+        self.version = self._get_flm_version()
+        self.models = self._fetch_all_models()
+        
+    def get_csv_filename(self, task_name: str) -> str:
+        return f"{task_name}_results_v{self.version}_{self.timestamp}.csv"
 
-    def get_flm_version(self) -> str:
+    def _get_flm_version(self) -> str:
         print("Checking flm version...")
         try:
-            version_result = subprocess.run(["flm", "-v"], capture_output=True, text=True)
-            flm_version = version_result.stdout.strip().replace(" ", "_").replace("/", "_")
-        except Exception as e:
-            print(f"Failed to get flm version: {e}")
+            response = urllib.request.urlopen(f"{self.base_url}/version", timeout=5)
+            version_data = json.loads(response.read().decode('utf-8'))
+            flm_version = version_data.get("version", "unknown_version")
+            print(f"Detected flm version: {flm_version}")
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, KeyError) as e:
+            print(f"Error fetching flm version: {e}")
             flm_version = "unknown_version"
-        print(f"Using flm version: {flm_version}")
         return flm_version
     
-    def get_csv_filename(self, task_name: str) -> str:
-        return f"{task_name}_results_{self.get_flm_version()}_{self.timestamp}.csv"
-
-    def fetch_all_models(self) -> json:
+    def _fetch_all_models(self) -> list:
         print("Fetching available models...")
-        result = subprocess.run(["flm", "list", "--json"], capture_output=True, text=True, check=True)
-        models_json = json.loads(result.stdout)
-        return models_json
+        try:
+            response = urllib.request.urlopen(f"{self.base_url}/models", timeout=5)
+            models_json = json.loads(response.read().decode('utf-8'))
+            model_list = models_json.get("data", [])
+            model_id = [m["id"] for m in model_list]
+            print(f"Models found: {len(model_id)}")
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as e:
+            print(f"Error fetching models: {e}")
+            model_id = []
+        return model_id
 
     def start_flm_server(self, audio, embed):
         """Starts the flm server as a subprocess."""
@@ -48,31 +64,30 @@ class BaseTestTask(ABC):
 
 
 class LLMTask(BaseTestTask):
+
+    def __init__(self, base_url, run_local=False):
+        super().__init__(base_url, run_local)
+        self.csv_filename = self.get_csv_filename("llm")
+
     def run(self, max_completion_tokens=-1):
         print("\n=== Starting LLM Tests ===")
-
-        csv_filename = self.get_csv_filename("llm")
         
-        all_models = self.fetch_all_models()
-        self.models = [m["model"] for m in all_models.get("models", []) if m["model"] not in ["whisper-v3:turbo", "embed-gemma:300m"]]
-        print("Testing the following LLM models:")
-        for i, model in enumerate(self.models, 1):
-            print(f"  {i}. {model}")
-
         non_stream_prompts = ["Teach me Maxwell's equations.", "What is pi * pi?"]
         stream_prompts = ["What is the largest ocean on Earth?", "Write a quick haiku about coding."]
 
-        server_process = self.start_flm_server(audio="0", embed="0")
+        # server_process = self.start_flm_server(audio="0", embed="0")
 
-        with open(csv_filename, mode='w', newline='', encoding='utf-8') as csv_file:
+        with open(self.csv_filename, mode='w', newline='', encoding='utf-8') as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(["Model", "Mode", "Input", "Reasoning Content", "Output Content"])
 
             for model_id in self.models:
                 print(f"\n--- Testing LLM model: {model_id} ---")
-                time.sleep(5) 
-                # Non-Stream Mode
+                time.sleep(1) 
+                print(f"Testing non-stream mode...\n")
+                
                 for prompt in non_stream_prompts:
+                    print(f"Prompt: {prompt}")
                     try:
                         response = self.client.chat.completions.create(
                             model=model_id,
@@ -80,10 +95,10 @@ class LLMTask(BaseTestTask):
                             stream=False,
                             max_completion_tokens=max_completion_tokens
                         )
-                        message = response.choices[0].message
-                        output_content = message.content or ""
-                        reasoning_content = getattr(message, "reasoning_content", "N/A") or "N/A"
-                        
+                        reasoning_content = getattr(response.choices[0].message, "reasoning_content", "N/A") or "N/A"
+                        output_content = response.choices[0].message.content or ""
+                        print(f"Reasoning content: {reasoning_content}")
+                        print(f"Content: {output_content}")
                         writer.writerow([model_id, "Non-Stream", prompt, reasoning_content, output_content])
                         time.sleep(1)
                     except Exception as e:
@@ -114,9 +129,9 @@ class LLMTask(BaseTestTask):
                     except Exception as e:
                         writer.writerow([model_id, "Stream", prompt, f"ERROR: {e}", "N/A"])
         print("\nShutting down flm server...")
-        server_process.terminate()
-        server_process.wait()
-        print(f"LLM tests complete. Saved to {csv_filename}")
+        # server_process.terminate()
+        # server_process.wait()
+        print(f"LLM tests complete. Saved to {self.csv_filename}")
 
 
 class EmbeddingTask(BaseTestTask):

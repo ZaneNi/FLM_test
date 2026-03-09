@@ -44,7 +44,6 @@ class BaseTestTask(ABC):
             models_json = json.loads(response.read().decode('utf-8'))
             model_list = models_json.get("data", [])
             model_id = [m["id"] for m in model_list]
-            print(f"Models found: {len(model_id)}")
         except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as e:
             print(f"Error fetching models: {e}")
             model_id = []
@@ -70,22 +69,21 @@ class LLMTask(BaseTestTask):
         self.csv_filename = self.get_csv_filename("llm")
 
     def run(self, max_completion_tokens=-1):
-        print("\n=== Starting LLM Tests ===")
-        
         prompt = "Teach me Maxwell's equations."
         followup_prompt = "Summarize the your answer."
 
         stream_prompt = "Tell me a joke and explain why it's funny." 
         stream_followup_prompt = "Summarize the joke and its explanation."
-
+        
         with open(self.csv_filename, mode='w', newline='', encoding='utf-8') as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(["Model", "Mode", "Input", "Reasoning Content", "Output Content"])
-
+            print("\n=== Starting LLM Tests ===")
+            print(f"Models found: {len(self.models)}")
             for model_id in self.models:
             # for model_id in self.models[2:4]:  # Limit to first 2 models for testing purposes
                 print(f"\n--- Testing LLM model: {model_id} ---")
-                print(f"\nTesting non-stream mode...\n")
+                print(f"Testing non-stream mode...\n")
                 messages = [
                     {"role": "user", "content": prompt}
                 ]
@@ -252,7 +250,11 @@ class ImageTask(BaseTestTask):
 
     def __init__(self, client):
         super().__init__(client)
-        self.test_image_path = "./test_files/image/test_image.jpeg"  # Ensure this image exists for testing
+        self.test_image1_path = "./test_files/image/test_image1.jpeg" 
+        self.test_image2_path = "./test_files/image/test_image2.jpg"
+        self.csv_filename = self.get_csv_filename("image")
+        self.vlm = ["gemma3:4b", "medgemma:4b", "medgemma1.5:4b", "qwen2.5vl-it:3b", "qwen3vl-it:4b", "translategemma:4b"]
+        self.models = [m for m in self.models if m in self.vlm]
 
     def load_image_base64(self, image_path):
         import base64
@@ -260,56 +262,96 @@ class ImageTask(BaseTestTask):
             return base64.b64encode(img_file.read()).decode('utf-8')
 
     def run(self, max_generation_tokens=-1):
-        print("\n=== Starting Image Tests ===")
-        
-        csv_filename = self.get_csv_filename("image")
-        
-        all_models = self.fetch_all_models()
-        self.models = [m["model"] for m in all_models.get("models", []) if m.get("vlm", False)] 
-        print("Testing the following Image models:")
-        for i, model in enumerate(self.models, 1):
-            print(f"  {i}. {model}")
+        prompt = "Describe these two images in detail."
+        followup_prompt = "Make a story that connects the two images together."
 
-        prompt = "Describe the image in detail."
-
-        server_process = self.start_flm_server(audio="0", embed="0")
-
-        # TODO: Implement OpenAI Image API calls (e.g., image generations)
-        with open(csv_filename, mode='w', newline='', encoding='utf-8') as csv_file:
+        with open(self.csv_filename, mode='w', newline='', encoding='utf-8') as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerow(["Model", "Mode", "Input", "Reasoning Content", "Output Content"])
+            writer.writerow(["Model", "Input", "Reasoning Content", "Output Content"])
+            print("\n=== Starting Image Tests ===")
+            print(f"Models found: {len(self.models)}")
             for model_id in self.models:
                 print(f"\n--- Testing VLMs: {model_id} ---")
-                time.sleep(5) 
-                try: 
-                    response = self.client.chat.completions.create(
-                        model=model_id,
-                        messages=[
+                messages = [
+                    {
+                        "role": "user", 
+                        "content": [
                             {
-                                "role": "user", 
-                                "content": [
-                                    {
-                                        "type": "text", 
-                                        "text": prompt
-                                    },
-                                    {
-                                        "type": "image_url", 
-                                        "image_url": {"url": f"data:image/jpeg;base64,{self.load_image_base64(self.test_image_path)}"}
-                                    }
-                                ]
+                                "type": "text", 
+                                "text": prompt
+                            },
+                            {
+                                "type": "image_url", 
+                                "image_url": {"url": f"data:image/jpeg;base64,{self.load_image_base64(self.test_image1_path)}"}
+                            },
+                            {
+                                "type": "image_url", 
+                                "image_url": {"url": f"data:image/jpg;base64,{self.load_image_base64(self.test_image2_path)}"}
                             }
                         ]
+                    }
+                ]
+                # first round
+                try: 
+                    print(f"Prompt: {prompt}")
+                    response = self.client.chat.completions.create(
+                        model=model_id,
+                        messages=messages,
+                        stream=True,
+                        max_completion_tokens=max_generation_tokens
                     )
-                    message = response.choices[0].message
-                    output_content = message.content or ""
-                    reasoning_content = getattr(message, "reasoning_content", "N/A") or "N/A"
                     
-                    writer.writerow([model_id, "Non-Stream", prompt, reasoning_content, output_content])
+                    output_content, reasoning_content = "", ""
+                    
+                    for chunk in response:
+                        if not chunk.choices: continue
+                        delta = chunk.choices[0].delta
+                        
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            reasoning_content += delta.reasoning_content
+                        if delta.content:
+                            output_content += delta.content
+                    writer.writerow([model_id, prompt, reasoning_content or "N/A", output_content])
+                    print("Done.")
+                    time.sleep(1)
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": output_content
+                    })
+                    messages.append({
+                        "role": "user",
+                        "content": followup_prompt
+                    })                  
+                except Exception as e:
+                    print(f"Error occurred in first round, model: {model_id}: {e}")
+                    writer.writerow([model_id, prompt, f"ERROR: {e}", "N/A"])
+                
+                
+                # second round with previous messages
+                try:
+                    print(f"Follow-up Prompt: {followup_prompt}")
+                    response = self.client.chat.completions.create(
+                        model=model_id,
+                        messages=messages,
+                        stream=True,
+                        max_completion_tokens=max_generation_tokens
+                    )
+                    output_content, reasoning_content = "", ""
+                    
+                    for chunk in response:
+                        if not chunk.choices: continue
+                        delta = chunk.choices[0].delta
+                        
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            reasoning_content += delta.reasoning_content
+                        if delta.content:
+                            output_content += delta.content
+                    writer.writerow([model_id, followup_prompt, reasoning_content or "N/A", output_content])
+                    print("Done.")
                     time.sleep(1)
                 except Exception as e:
-                    writer.writerow([model_id, "Non-Stream", prompt, f"ERROR: {e}", "N/A"])
-
-        print("\nShutting down flm server...")
-        server_process.terminate()
-        server_process.wait()
-        print(f"Image tests complete. Saved to {csv_filename}")
+                    print(f"Error occurred in second round, model: {model_id}: {e}")
+                    writer.writerow([model_id, followup_prompt, f"ERROR: {e}", "N/A"])
+                print(f"Finished testing model: {model_id}")
+        print(f"Image tests complete. Saved to {self.csv_filename}")

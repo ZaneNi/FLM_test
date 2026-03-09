@@ -1,84 +1,108 @@
-# Setup script for Windows
-# This script sets up the Python virtual environment and installs dependencies for FLM testing
+# Setup script for Windows using uv
+# This script sets up the Python environment and installs dependencies for FLM testing
+#
+# Behavior:
+# - If pyproject.toml exists, use the uv project workflow: `uv sync`
+# - Else, if requirements.txt exists, create/use a virtual environment and sync it with `uv pip sync`
+# - Supports -Force to recreate the environment
 
 param(
     [switch]$Force
 )
 
-Write-Host "Setting up FLM test environment for Windows..." -ForegroundColor Green
+$ErrorActionPreference = "Stop"
 
-# Check if Python is available
+Write-Host "Setting up FLM test environment for Windows with uv..." -ForegroundColor Green
+
+function Fail($Message) {
+    Write-Host "Error: $Message" -ForegroundColor Red
+    exit 1
+}
+
+function Warn($Message) {
+    Write-Host "Warning: $Message" -ForegroundColor Yellow
+}
+
+# Check if uv is available
+$uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+if (-not $uvCmd) {
+    Fail "uv is not installed or not in PATH. Install it first, e.g. with 'winget install --id=astral-sh.uv -e' or the official PowerShell installer."
+}
+
 try {
-    $pythonVersion = python --version 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Python not found"
-    }
+    $uvVersion = uv --version
+    Write-Host "Using $uvVersion"
 } catch {
-    Write-Host "Error: Python is not installed or not in PATH. Please install Python 3.8 or higher from https://python.org" -ForegroundColor Red
-    exit 1
+    Fail "uv was found, but 'uv --version' failed."
 }
 
-# Extract version number
-$versionMatch = $pythonVersion | Select-String -Pattern "Python (\d+)\.(\d+)"
-if (-not $versionMatch) {
-    Write-Host "Error: Could not determine Python version." -ForegroundColor Red
-    exit 1
-}
+$projectFile = "pyproject.toml"
+$requirementsFile = "requirements.txt"
+$venvPath = "venv"
 
-$major = [int]$versionMatch.Matches[0].Groups[1].Value
-$minor = [int]$versionMatch.Matches[0].Groups[1].Value
-
-if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 8)) {
-    Write-Host "Error: Python 3.8 or higher is required. Current version: $pythonVersion" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "Using $pythonVersion"
-
-# Create virtual environment if it doesn't exist
-if (-not (Test-Path "venv")) {
-    Write-Host "Creating virtual environment..."
-    python -m venv venv
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Error: Failed to create virtual environment." -ForegroundColor Red
-        exit 1
+# Project-style workflow: prefer pyproject.toml if present
+if (Test-Path $projectFile) {
+    if ($Force -and (Test-Path $venvPath)) {
+        Write-Host "Removing existing virtual environment at $venvPath..."
+        Remove-Item -Recurse -Force $venvPath
     }
-} elseif (-not $Force) {
-    Write-Host "Virtual environment already exists. Use -Force to recreate." -ForegroundColor Yellow
-} else {
-    Write-Host "Removing existing virtual environment..."
-    Remove-Item -Recurse -Force venv
-    Write-Host "Creating virtual environment..."
-    python -m venv venv
+
+    Write-Host "Detected $projectFile. Syncing project environment with uv..."
+    uv sync
+    if ($LASTEXITCODE -ne 0) {
+        Fail "uv sync failed."
+    }
+
+    Write-Host "Activating virtual environment..."
+    & ".\$venvPath\Scripts\Activate.ps1"
+
+    Write-Host "Setup complete!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "To activate the virtual environment in future sessions, run:" -ForegroundColor Cyan
+    Write-Host ".\$venvPath\Scripts\Activate.ps1"
+    Write-Host ""
+    Write-Host "To run tests, use:" -ForegroundColor Cyan
+    Write-Host "uv run python main.py --help"
+    exit 0
 }
 
-# Activate virtual environment
+# requirements.txt workflow
+if (-not (Test-Path $requirementsFile)) {
+    Warn "$projectFile and $requirementsFile were both not found. Creating an empty environment only."
+}
+
+if ($Force -and (Test-Path $venvPath)) {
+    Write-Host "Removing existing virtual environment at $venvPath..."
+    Remove-Item -Recurse -Force $venvPath
+}
+
+if (-not (Test-Path $venvPath)) {
+    Write-Host "Creating virtual environment with uv..."
+    uv venv $venvPath
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Failed to create virtual environment with uv."
+    }
+} else {
+    Write-Host "Virtual environment already exists at $venvPath."
+}
+
 Write-Host "Activating virtual environment..."
-& ".\venv\Scripts\Activate.ps1"
+& ".\$venvPath\Scripts\Activate.ps1"
 
-# Upgrade pip
-Write-Host "Upgrading pip..."
-python -m pip install --upgrade pip
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Warning: Failed to upgrade pip." -ForegroundColor Yellow
-}
-
-# Install requirements
-if (Test-Path "requirements.txt") {
-    Write-Host "Installing Python packages from requirements.txt..."
-    pip install -r requirements.txt
+if (Test-Path $requirementsFile) {
+    Write-Host "Syncing Python packages from $requirementsFile..."
+    uv pip sync $requirementsFile
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Error: Failed to install requirements." -ForegroundColor Red
-        exit 1
+        Fail "Failed to sync requirements from $requirementsFile."
     }
 } else {
-    Write-Host "Warning: requirements.txt not found. Skipping package installation." -ForegroundColor Yellow
+    Warn "$requirementsFile not found. Skipping package installation."
 }
 
 Write-Host "Setup complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "To activate the virtual environment in future sessions, run:" -ForegroundColor Cyan
-Write-Host "& .\venv\Scripts\Activate.ps1"
+Write-Host ".\$venvPath\Scripts\Activate.ps1"
 Write-Host ""
-Write-Host "To run tests, make sure the FLM server is running and use:" -ForegroundColor Cyan
+Write-Host "To run tests, use:" -ForegroundColor Cyan
 Write-Host "python main.py --help"

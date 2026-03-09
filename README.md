@@ -66,7 +66,7 @@ Update to match your FLM server deployment:
 - **Remote server:** `http://your-server-ip:port/v1`
 
 
-### 3. Start FLM Server
+### 4. Start FLM Server
 
 Ensure your FastFlowLM server is running before running tests. Start the server with appropriate flags based on the tests you plan to run:
 
@@ -96,7 +96,7 @@ flm serve -e 1 -a 1
 ```
 
 
-### 4. Run Tests
+### 5. Run Tests
 
 Activate the virtual environment:
 

@@ -1,6 +1,6 @@
 import argparse
 import json
-from tasks import LLMTask, EmbeddingTask, AudioTask, ImageTask
+from tasks import LLMTask, EmbeddingTask, AudioTask, VisionTask
 
 
 def main():
@@ -8,16 +8,16 @@ def main():
     parser.add_argument('--llm', action='store_true', help="Run LLM tests")
     parser.add_argument('--embedding', action='store_true', help="Run Embedding tests")
     parser.add_argument('--audio', action='store_true', help="Run Audio tests")
-    parser.add_argument('--image', action='store_true', help="Run Image tests")
+    parser.add_argument('--vision', action='store_true', help="Run vision tests")
     parser.add_argument('--all', action='store_true', help="Run all available tests")
     parser.add_argument('--gen-lim', type=int, default=-1, help="Maximum number of tokens to generate")
     
     args = parser.parse_args()
 
     if args.all:
-        args.llm = args.embedding = args.audio = args.image = True
+        args.llm = args.embedding = args.audio = args.vision = True
 
-    if not any([args.llm, args.embedding, args.audio, args.image]):
+    if not any([args.llm, args.embedding, args.audio, args.vision]):
         parser.print_help()
         return
 
@@ -41,8 +41,8 @@ def main():
         if args.audio:
             AudioTask(baseurl).run()
             
-        if args.image:
-            ImageTask(baseurl).run(max_generation_tokens=args.gen_lim)
+        if args.vision:
+            VisionTask(baseurl).run(max_generation_tokens=args.gen_lim)
 
     except Exception as e:
         print(f"Error during testing: {e}")

@@ -245,13 +245,13 @@ class AudioTask(BaseTestTask):
         server_process.wait()
         print(f"Audio tests complete. Saved to {csv_filename}")
 
-class ImageTask(BaseTestTask):
+class VisionTask(BaseTestTask):
 
     def __init__(self, client):
         super().__init__(client)
         self.test_image1_path = "./test_files/image/test_image1.jpeg" 
         self.test_image2_path = "./test_files/image/test_image2.jpg"
-        self.csv_filename = self.get_csv_filename("image")
+        self.csv_filename = self.get_csv_filename("vision")
         self.vlm = ["gemma3:4b", "medgemma:4b", "medgemma1.5:4b", "qwen2.5vl-it:3b", "qwen3vl-it:4b", "translategemma:4b"]
         self.models = [m for m in self.models if m in self.vlm]
 
@@ -267,7 +267,7 @@ class ImageTask(BaseTestTask):
         with open(self.csv_filename, mode='w', newline='', encoding='utf-8') as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(["Model", "Input", "Reasoning Content", "Output Content"])
-            print("\n=== Starting Image Tests ===")
+            print("\n=== Starting Vision Tests ===")
             print(f"Models found: {len(self.models)}")
             for model_id in self.models:
                 print(f"\n--- Testing VLMs: {model_id} ---")
@@ -353,4 +353,4 @@ class ImageTask(BaseTestTask):
                     print(f"Error occurred in second round, model: {model_id}: {e}")
                     writer.writerow([model_id, followup_prompt, f"ERROR: {e}", "N/A"])
                 print(f"Finished testing model: {model_id}")
-        print(f"Image tests complete. Saved to {self.csv_filename}")
+        print(f"Vision tests complete. Saved to {self.csv_filename}")

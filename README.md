@@ -107,7 +107,7 @@ source venv/bin/activate
 
 **Windows:**
 ```powershell
-.\venv\Scripts\Activate.ps1
+.\venv\Scripts\activate.ps1
 ```
 
 Run tests with:

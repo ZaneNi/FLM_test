@@ -1,10 +1,10 @@
 import argparse
+import json
 from tasks import LLMTask, EmbeddingTask, AudioTask, ImageTask
 
 
 def main():
     parser = argparse.ArgumentParser(description="Test runner for FLM models.")
-    parser.add_argument('--local', action='store_true', help="Run tests against local FLM server") 
     parser.add_argument('--llm', action='store_true', help="Run LLM tests")
     parser.add_argument('--embedding', action='store_true', help="Run Embedding tests")
     parser.add_argument('--audio', action='store_true', help="Run Audio tests")
@@ -22,19 +22,18 @@ def main():
         return
 
     try:
-        if args.local:
-            run_local = True
-            baseurl = "http://localhost:52625/v1"
-        else:
-            run_local = False
-            baseurl = input("Enter the remote server URL (e.g., 130.127.199.196): ")
-            port = input("Enter the port number (e.g., 52625): ")
-            baseurl = f"http://{baseurl}:{port}/v1"
+        print("Please ensure you have started the FLM server and have the correct URL and port. \n")
 
-            # baseurl = "http://130.127.199.196:52625/v1"
+        with open("backend.json", "r") as f:
+            backend_config = json.load(f)
+            if "base_url" in backend_config:
+                baseurl = backend_config["base_url"]
+                print(f"Using base URL from backend.json: {baseurl}")
+            else:
+                print("No base_url found in backend.json.")
 
         if args.llm:
-            LLMTask(baseurl, run_local).run(max_completion_tokens=args.gen_lim)
+            LLMTask(baseurl).run(max_completion_tokens=args.gen_lim)
             
         if args.embedding:
             EmbeddingTask(baseurl).run()
@@ -43,7 +42,7 @@ def main():
             AudioTask(baseurl).run()
             
         if args.image:
-            ImageTask(baseurl, run_local).run(max_generation_tokens=args.gen_lim)
+            ImageTask(baseurl).run(max_generation_tokens=args.gen_lim)
 
     except Exception as e:
         print(f"Error during testing: {e}")

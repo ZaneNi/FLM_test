@@ -14,10 +14,9 @@ class BaseTestTask(ABC):
     Abstract base class for all testing tasks.
     Enforces a standard interface for running tests and saving results.
     """
-    def __init__(self, base_url, run_local=False):
+    def __init__(self, base_url):
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.base_url = base_url
-        self.run_local = run_local
         self.client = OpenAI(base_url=base_url, api_key="flm")
         self.version = self._get_flm_version()
         self.models = self._fetch_all_models()
@@ -64,8 +63,8 @@ class BaseTestTask(ABC):
 
 class LLMTask(BaseTestTask):
 
-    def __init__(self, base_url, run_local=False):
-        super().__init__(base_url, run_local)
+    def __init__(self, base_url):
+        super().__init__(base_url)
         self.csv_filename = self.get_csv_filename("llm")
 
     def run(self, max_completion_tokens=-1):

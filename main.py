@@ -11,7 +11,8 @@ def main():
     parser.add_argument('--vision', action='store_true', help="Run vision tests")
     parser.add_argument('--all', action='store_true', help="Run all available tests")
     parser.add_argument('--gen-lim', type=int, default=-1, help="Maximum number of tokens to generate")
-    
+    parser.add_argument('--backend-os', type=str, default="linux", choices=["linux", "windows"], help="OS of the FLM backend (default: linux)")
+
     args = parser.parse_args()
 
     if args.all:
@@ -33,16 +34,16 @@ def main():
                 print("No base_url found in backend.json.")
 
         if args.llm:
-            LLMTask(baseurl).run(max_completion_tokens=args.gen_lim)
-            
+            LLMTask(baseurl, args.backend_os).run(max_completion_tokens=args.gen_lim)
+
         if args.embedding:
-            EmbeddingTask(baseurl).run()
-            
+            EmbeddingTask(baseurl, args.backend_os).run()
+
         if args.audio:
-            AudioTask(baseurl).run()
-            
+            AudioTask(baseurl, args.backend_os).run()
+
         if args.vision:
-            VisionTask(baseurl).run(max_generation_tokens=args.gen_lim)
+            VisionTask(baseurl, args.backend_os).run(max_generation_tokens=args.gen_lim)
 
     except Exception as e:
         print(f"Error during testing: {e}")

@@ -1,5 +1,6 @@
 import base64
 import csv
+import os
 import time
 import subprocess
 import json
@@ -15,15 +16,17 @@ class BaseTestTask(ABC):
     Abstract base class for all testing tasks.
     Enforces a standard interface for running tests and saving results.
     """
-    def __init__(self, base_url):
+    def __init__(self, base_url, backend_os="linux"):
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.base_url = base_url
         self.client = OpenAI(base_url=base_url, api_key="flm")
         self.version = self._get_flm_version()
         self.models = self._fetch_all_models()
+        self.results_dir = os.path.join("results", self.timestamp, backend_os)
+        os.makedirs(self.results_dir, exist_ok=True)
 
     def get_csv_filename(self, task_name: str) -> str:
-        return f"{task_name}_results_v{self.version}_{self.timestamp}.csv"
+        return os.path.join(self.results_dir, f"{task_name}_results_v{self.version}.csv")
 
     def _get_flm_version(self) -> str:
         print("\nChecking flm version...")
@@ -77,8 +80,8 @@ class BaseTestTask(ABC):
 
 class LLMTask(BaseTestTask):
 
-    def __init__(self, base_url):
-        super().__init__(base_url)
+    def __init__(self, base_url, backend_os="linux"):
+        super().__init__(base_url, backend_os)
         self.csv_filename = self.get_csv_filename("llm")
 
     def _run_two_rounds(self, writer, model_id, prompt, followup_prompt, stream, max_completion_tokens):
@@ -197,8 +200,8 @@ class AudioTask(BaseTestTask):
 
 class VisionTask(BaseTestTask):
 
-    def __init__(self, base_url):
-        super().__init__(base_url)
+    def __init__(self, base_url, backend_os="linux"):
+        super().__init__(base_url, backend_os)
         self.test_image1_path = "./test_files/image/test_image1.jpeg"
         self.test_image2_path = "./test_files/image/test_image2.jpg"
         self.csv_filename = self.get_csv_filename("vision")

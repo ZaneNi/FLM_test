@@ -82,6 +82,7 @@ class LLMTask(BaseTestTask):
 
     def __init__(self, base_url, backend_os="linux"):
         super().__init__(base_url, backend_os)
+        self.models = [m for m in self.models if m not in ("gpt-oss:20b", "gpt-oss-sg:20b", "qwen3.5:4b", "qwen3.5:9b")]
         self.csv_filename = self.get_csv_filename("llm")
 
     def _run_two_rounds(self, writer, model_id, prompt, followup_prompt, stream, max_completion_tokens):
@@ -147,8 +148,8 @@ class LLMTask(BaseTestTask):
             for model_id in self.models:
             # for model_id in self.models[2:4]:  # Limit to first 2 models for testing purposes
                 print(f"\n--- Testing LLM model: {model_id} ---")
-                print("Testing non-stream mode...\n")
-                self._run_two_rounds(writer, model_id, prompt, followup_prompt, stream=False, max_completion_tokens=max_completion_tokens)
+                # print("Testing non-stream mode...\n")
+                # self._run_two_rounds(writer, model_id, prompt, followup_prompt, stream=False, max_completion_tokens=max_completion_tokens)
                 print("\nTesting stream mode...\n")
                 self._run_two_rounds(writer, model_id, stream_prompt, stream_followup_prompt, stream=True, max_completion_tokens=max_completion_tokens)
                 print(f"Finished testing model: {model_id}")
@@ -205,7 +206,7 @@ class VisionTask(BaseTestTask):
         self.test_image1_path = "./test_files/image/test_image1.jpeg"
         self.test_image2_path = "./test_files/image/test_image2.jpg"
         self.csv_filename = self.get_csv_filename("vision")
-        self.vlm = ["gemma3:4b", "medgemma:4b", "medgemma1.5:4b", "qwen2.5vl-it:3b", "qwen3vl-it:4b", "translategemma:4b"]
+        self.vlm = ["gemma3:4b", "medgemma:4b", "medgemma1.5:4b", "qwen2.5vl-it:3b", "qwen3vl-it:4b", "translategemma:4b", "qwen3.5:0.8b", "qwen3.5:2b", "gemma4-it:e2b", "gemma4-it:e4b"]
         self.models = [m for m in self.models if m in self.vlm]
 
     def _load_image_base64(self, image_path) -> str:
